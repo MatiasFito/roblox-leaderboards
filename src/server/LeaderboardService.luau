@@ -34,6 +34,7 @@ local usernameCache: { [number]: string } = {}
 local SAVE_COOLDOWN = 6 -- seconds
 
 local function _doSave(player: Player, value: number)
+	print("Saving score for", player.Name, ":", value)
 	local userId = player.UserId
 	local ok, err = pcall(function()
 		dataStore:SetAsync(tostring(userId), math.floor(value))
@@ -155,6 +156,7 @@ local function _trackPlayer(player: Player)
 	lastSaved[player] = 0
 
 	-- Save when the value changes
+	print("Tracking player", player.Name, "with initial score", statValue.Value)
 	statValue.Changed:Connect(function(newValue: number)
 		_scheduleSave(player, newValue)
 	end)

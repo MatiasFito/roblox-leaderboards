@@ -1,2 +1,2 @@
-local LeaderboardClient = require(script.Parent.LeaderboardClient)
+local LeaderboardClient = require(script.LeaderboardClient)
 LeaderboardClient.init()

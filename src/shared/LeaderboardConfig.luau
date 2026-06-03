@@ -26,8 +26,11 @@ LeaderboardConfig.maxEntries = 25
 -- ── Board Placement ───────────────────────────────────────────────
 -- CFrame and size of the board Part that will be created in Workspace.
 -- Adjust these to position the board in your game world.
+-- Size convention: Vector3.new(width, height, thickness)
+--   The SurfaceGui renders on the Front face (-Z), so keep Z (thickness) small
+--   and put the display width in X and display height in Y.
 LeaderboardConfig.boardCFrame = CFrame.new(0, 10, -20)
-LeaderboardConfig.boardSize = Vector3.new(0.5, 14, 20)
+LeaderboardConfig.boardSize = Vector3.new(20, 14, 0.5)
 
 -- ── Podium Placement ─────────────────────────────────────────────
 -- CFrame of the CENTER of the podium area (where the 1st-place platform sits).
