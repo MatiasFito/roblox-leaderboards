@@ -1,1 +1,2 @@
-print("Hello world, from server!")
+local LeaderboardService = require(script.Parent.LeaderboardService)
+LeaderboardService.init()

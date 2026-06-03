@@ -1,0 +1,225 @@
+-- LeaderboardService
+-- Orchestrates DataStore saving, score auto-tracking, periodic refresh,
+-- and coordinates the Gui + Podium modules.
+--
+-- Public API (call from other server scripts when needed):
+--   LeaderboardService.init()                     → starts everything
+--   LeaderboardService.setScore(player, value)    → manual score override / escape hatch
+
+local DataStoreService = game:GetService("DataStoreService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage.Shared.LeaderboardConfig)
+local Gui = require(script.Parent.LeaderboardGui)
+local Podium = require(script.Parent.LeaderboardPodium)
+
+local LeaderboardService = {}
+
+-- ── State ─────────────────────────────────────────────────────────
+
+local dataStore: OrderedDataStore
+local guiHandle: { [string]: any }
+
+-- Debounce tracking per player
+local lastSaved: { [Player]: number } = {} -- tick() of last successful save
+local pendingTask: { [Player]: thread? } = {} -- scheduled task.delay thread
+local lastValue: { [Player]: number } = {} -- most recent known score
+
+-- Username cache to avoid repeated GetNameFromUserIdAsync calls
+local usernameCache: { [number]: string } = {}
+
+-- ── DataStore helpers ─────────────────────────────────────────────
+
+local SAVE_COOLDOWN = 6 -- seconds
+
+local function _doSave(player: Player, value: number)
+	local userId = player.UserId
+	local ok, err = pcall(function()
+		dataStore:SetAsync(tostring(userId), math.floor(value))
+	end)
+	if ok then
+		lastSaved[player] = tick()
+		pendingTask[player] = nil
+	else
+		warn("[LeaderboardService] Failed to save score for", player.Name, "–", err)
+	end
+end
+
+local function _scheduleSave(player: Player, value: number)
+	lastValue[player] = value
+
+	local elapsed = tick() - (lastSaved[player] or 0)
+
+	if elapsed >= SAVE_COOLDOWN then
+		-- Enough time has passed → save immediately
+		_doSave(player, value)
+	else
+		-- Cancel any previously scheduled save for this player
+		local pending = pendingTask[player]
+		if pending then
+			task.cancel(pending)
+			pendingTask[player] = nil
+		end
+
+		-- Schedule a save for when the cooldown expires
+		local remaining = SAVE_COOLDOWN - elapsed
+		pendingTask[player] = task.delay(remaining, function()
+			if player and player.Parent then -- still in game
+				_doSave(player, lastValue[player])
+			end
+		end)
+	end
+end
+
+-- ── Username resolution ───────────────────────────────────────────
+
+local function _getUsername(userId: number): string
+	if usernameCache[userId] then
+		return usernameCache[userId]
+	end
+
+	local ok, name = pcall(function()
+		return Players:GetNameFromUserIdAsync(userId)
+	end)
+
+	local resolved = if ok and name then name else ("Player " .. userId)
+	usernameCache[userId] = resolved
+	return resolved
+end
+
+-- ── Leaderboard refresh ───────────────────────────────────────────
+
+local function _fetchTopEntries(): { { [string]: any } }
+	local entries = {}
+
+	local ok, pages = pcall(function()
+		return dataStore:GetSortedAsync(false, Config.maxEntries)
+	end)
+	if not ok then
+		warn("[LeaderboardService] GetSortedAsync failed –", pages)
+		return entries
+	end
+
+	local rank = 0
+	local page = pages:GetCurrentPage()
+	for _, item in page do
+		rank += 1
+		local userId = tonumber(item.key)
+		local score = item.value
+
+		if userId then
+			table.insert(entries, {
+				rank = rank,
+				userId = userId,
+				name = _getUsername(userId),
+				score = score,
+			})
+		end
+	end
+
+	return entries
+end
+
+local function _refresh()
+	local entries = _fetchTopEntries()
+
+	-- Update board GUI
+	Gui.update(guiHandle, entries)
+
+	-- Update podium rigs (top 3 only)
+	local top3 = { entries[1], entries[2], entries[3] }
+	Podium.update(top3)
+
+	-- Schedule next refresh
+	task.delay(Config.refreshInterval, _refresh)
+end
+
+-- ── Player tracking ───────────────────────────────────────────────
+
+local function _trackPlayer(player: Player)
+	-- Wait for leaderstats and the specific stat value
+	local leaderstats = player:WaitForChild("leaderstats", 30)
+	if not leaderstats then
+		warn("[LeaderboardService] No leaderstats found for", player.Name)
+		return
+	end
+
+	local statValue = leaderstats:WaitForChild(Config.statName, 30)
+	if not statValue then
+		warn("[LeaderboardService] No stat '" .. Config.statName .. "' found for", player.Name)
+		return
+	end
+
+	-- Initialise last-saved time so first change is compared to "never saved"
+	lastSaved[player] = 0
+
+	-- Save when the value changes
+	statValue.Changed:Connect(function(newValue: number)
+		_scheduleSave(player, newValue)
+	end)
+end
+
+local function _onPlayerRemoving(player: Player)
+	-- Cancel any pending scheduled save
+	local pending = pendingTask[player]
+	if pending then
+		task.cancel(pending)
+		pendingTask[player] = nil
+	end
+
+	-- Always save the final score before the player leaves
+	local value = lastValue[player]
+	if value then
+		_doSave(player, value)
+	end
+
+	-- Clean up tables
+	lastSaved[player] = nil
+	lastValue[player] = nil
+	pendingTask[player] = nil
+end
+
+-- ── Public API ────────────────────────────────────────────────────
+
+-- Manual score override. Saves immediately and resets the debounce timer.
+-- Use this when you need to set a score from outside the leaderstats system.
+function LeaderboardService.setScore(player: Player, value: number)
+	lastValue[player] = value
+
+	-- Cancel any pending scheduled save
+	local pending = pendingTask[player]
+	if pending then
+		task.cancel(pending)
+		pendingTask[player] = nil
+	end
+
+	_doSave(player, value)
+end
+
+-- Entry point. Call once from init.server.luau.
+function LeaderboardService.init()
+	dataStore = DataStoreService:GetOrderedDataStore(Config.dataStoreKey)
+
+	-- Build the physical board and podium platforms
+	guiHandle = Gui.build()
+	Podium.build()
+
+	-- Connect player events
+	Players.PlayerAdded:Connect(function(player)
+		task.spawn(_trackPlayer, player)
+	end)
+
+	-- Handle players who joined before this script ran (shouldn't normally happen
+	-- in production, but useful when testing in Studio with already-joined players)
+	for _, player in Players:GetPlayers() do
+		task.spawn(_trackPlayer, player)
+	end
+
+	Players.PlayerRemoving:Connect(_onPlayerRemoving)
+
+	-- Initial board fetch (slight delay to let DataStore settle on server start)
+	task.delay(3, _refresh)
+end
+
+return LeaderboardService
