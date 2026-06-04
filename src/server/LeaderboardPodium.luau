@@ -5,6 +5,7 @@
 
 local Players = game:GetService("Players")
 local CollectionService = game:GetService("CollectionService")
+local PhysicsService = game:GetService("PhysicsService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.LeaderboardConfig)
@@ -45,6 +46,7 @@ local RIG_HOVER_OFFSET = 0.1
 
 local platformParts: { [number]: BasePart } = {}
 local currentRigs: { [number]: Model? } = { nil, nil, nil }
+local currentUserIds: { [number]: number? } = { nil, nil, nil }
 local podiumFolder: Folder
 
 -- ── Helpers ───────────────────────────────────────────────────────
@@ -90,9 +92,10 @@ local function destroyRig(slot: number)
 		rig:Destroy()
 		currentRigs[slot] = nil
 	end
+	currentUserIds[slot] = nil
 end
 
-local function spawnRig(slot: number, userId: number)
+local function spawnRig(slot: number, userId: number, playerName: string)
 	-- Fetch avatar description (may fail for invalid/deleted accounts)
 	local ok, desc = pcall(function()
 		return Players:GetHumanoidDescriptionFromUserIdAsync(userId)
@@ -111,7 +114,15 @@ local function spawnRig(slot: number, userId: number)
 		return
 	end
 
-	model.Name = "PodiumRig_" .. slot
+	model.Name = playerName
+
+	-- Set all rig parts to the PodiumRig collision group so players
+	-- can walk through the display characters without being blocked.
+	for _, part in model:GetDescendants() do
+		if part:IsA("BasePart") then
+			part.CollisionGroup = "PodiumRig"
+		end
+	end
 
 	-- Position: place HumanoidRootPart at the top surface of the platform
 	local rootPart = model:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -134,6 +145,7 @@ local function spawnRig(slot: number, userId: number)
 	CollectionService:AddTag(model, "LeaderboardPodiumRig")
 
 	currentRigs[slot] = model
+	currentUserIds[slot] = userId -- mark slot as successfully filled
 end
 
 -- ── Public: build ─────────────────────────────────────────────────
@@ -143,11 +155,25 @@ end
 function LeaderboardPodium.build()
 	podiumFolder = makeFolder()
 
+	-- Set up collision groups so podium rigs don't block players,
+	-- but still stand on their own platforms.
+	-- pcall guards against re-registration if the script runs more than once (Studio).
+	pcall(function()
+		PhysicsService:RegisterCollisionGroup("PodiumRig")
+	end)
+	pcall(function()
+		PhysicsService:RegisterCollisionGroup("PodiumPlatform")
+	end)
+	PhysicsService:CollisionGroupSetCollidable("PodiumRig", "Default", false)
+	PhysicsService:CollisionGroupSetCollidable("PodiumRig", "PodiumRig", false)
+	PhysicsService:CollisionGroupSetCollidable("PodiumRig", "PodiumPlatform", true)
+
 	for slot = 1, 3 do
 		local plat = Instance.new("Part")
 		plat.Name = "PodiumPlatform_" .. slot
 		plat.Anchored = true
 		plat.CanCollide = true
+		plat.CollisionGroup = "PodiumPlatform"
 		plat.Material = PLATFORM_MATERIALS[slot]
 		plat.Color = PLATFORM_COLORS[slot]
 		plat.Size = Vector3.new(PLATFORM_SIZE.X, PLATFORM_HEIGHTS[slot], PLATFORM_SIZE.Z)
@@ -179,14 +205,23 @@ end
 -- ── Public: update ────────────────────────────────────────────────
 
 -- top3: array of up to 3 entries { rank, userId, name, score }
--- Destroys old rigs and spawns fresh ones for the new top-3.
+-- Skips slots where the same player is already displayed (avoids unnecessary
+-- avatar re-fetches on refreshes where the top-3 hasn't changed).
 function LeaderboardPodium.update(top3: { { [string]: any } })
 	for slot = 1, 3 do
-		destroyRig(slot)
 		local entry = top3[slot]
+		local newUserId = if entry then entry.userId else nil
+
+		-- Skip if this slot already has a live rig for the same player
+		if currentUserIds[slot] == newUserId and currentRigs[slot] ~= nil then
+			continue
+		end
+
+		destroyRig(slot) -- clears currentUserIds[slot] too
+
 		if entry and entry.userId then
 			-- Spawn in a separate thread so one slow fetch doesn't block the others
-			task.spawn(spawnRig, slot, entry.userId)
+			task.spawn(spawnRig, slot, entry.userId, entry.name)
 		end
 	end
 end

@@ -10,7 +10,7 @@ game.Players.PlayerAdded:Connect(function(player)
 	diamonds.Parent = leaderstats
 
 	task.delay(3, function()
-		diamonds.Value = 200
+		diamonds.Value = 50
 	end)
 end)
 
