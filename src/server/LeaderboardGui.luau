@@ -97,7 +97,7 @@ function LeaderboardGui.build(): { [string]: any }
 	})
 
 	-- ── Podium Info (top-3 summary row) ──────────────────────────
-	local podiumH = 160
+	local podiumH = 240
 	local podiumFrame = makeInstance("Frame", {
 		Name = "PodiumInfo",
 		Size = UDim2.new(1, 0, 0, podiumH),
@@ -198,7 +198,7 @@ function LeaderboardGui.build(): { [string]: any }
 	})
 
 	-- Pre-build all row frames (hidden until update fills them)
-	local ROW_H = 44
+	local ROW_H = 66
 	local RANK_W = 0.12 -- 12 % of row
 	local SCORE_W = 0.26 -- 26 % of row
 	local NAME_W = 1 - RANK_W - SCORE_W
@@ -263,6 +263,26 @@ function LeaderboardGui.build(): { [string]: any }
 		rowScoreLabels[i] = scoreLabel
 	end
 
+	-- ── Countdown footer ─────────────────────────────────────────
+	local FOOTER_H = 60
+	local footer = makeInstance("Frame", {
+		Name = "Footer",
+		Size = UDim2.new(1, 0, 0, FOOTER_H),
+		Position = UDim2.new(0, 0, 1, -FOOTER_H),
+		BackgroundColor3 = theme.headerColor,
+		BorderSizePixel = 0,
+		Parent = root,
+	}) :: Frame
+
+	local countdownLabel = makeLabel({
+		Name = "Countdown",
+		Size = UDim2.fromScale(1, 1),
+		Text = "Updates in ...",
+		Font = Enum.Font.Gotham,
+		TextColor3 = theme.dimTextColor,
+		Parent = footer,
+	}) :: TextLabel
+
 	return {
 		boardPart = boardPart,
 		podiumNameLabels = podiumNameLabels,
@@ -271,6 +291,7 @@ function LeaderboardGui.build(): { [string]: any }
 		rowRankLabels = rowRankLabels,
 		rowNameLabels = rowNameLabels,
 		rowScoreLabels = rowScoreLabels,
+		countdownLabel = countdownLabel,
 	}
 end
 
@@ -312,6 +333,16 @@ function LeaderboardGui.update(handle: { [string]: any }, entries: { { [string]:
 			row.Visible = false
 		end
 	end
+end
+
+-- ── Public: setCountdown ─────────────────────────────────────────
+
+-- seconds: integer seconds remaining until the next refresh.
+-- Called every second by LeaderboardService between refreshes.
+function LeaderboardGui.setCountdown(handle: { [string]: any }, seconds: number)
+	local m = math.floor(seconds / 60)
+	local s = seconds % 60
+	handle.countdownLabel.Text = string.format("Updates in %d:%02d", m, s)
 end
 
 return LeaderboardGui
