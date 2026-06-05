@@ -21,6 +21,9 @@ local LeaderboardService = {}
 local dataStore: OrderedDataStore
 local guiHandle: { [string]: any }
 
+-- Read strategy once so the type checker sees a plain string, not a table key.
+local SCORE_STRATEGY: string = (Config :: any).scoreStrategy or "always"
+
 -- Debounce tracking per player
 local lastSaved: { [Player]: number } = {} -- tick() of last successful save
 local pendingTask: { [Player]: thread? } = {} -- scheduled task.delay thread
@@ -32,12 +35,23 @@ local usernameCache: { [number]: string } = {}
 -- Countdown ticker thread (cancelled and restarted on each refresh)
 local countdownThread: thread? = nil
 
+-- All-time peak per player (only used when scoreStrategy == "max").
+-- Loaded from DataStore on join so comparisons are against the true lifetime record.
+local sessionPeak: { [Player]: number } = {}
+
 -- ── DataStore helpers ─────────────────────────────────────────────
 
 local SAVE_COOLDOWN = 6 -- seconds
 
 local function _doSave(player: Player, value: number)
-	print("Saving score for", player.Name, ":", value)
+	-- "max" strategy: only write if the new value beats the stored all-time peak
+	if SCORE_STRATEGY == "max" then
+		if value <= (sessionPeak[player] or 0) then
+			return -- not a new record, skip the write
+		end
+		sessionPeak[player] = value -- update in-memory peak before writing
+	end
+
 	local userId = player.UserId
 	local ok, err = pcall(function()
 		dataStore:SetAsync(tostring(userId), math.floor(value))
@@ -175,6 +189,15 @@ local function _trackPlayer(player: Player)
 	-- Initialise last-saved time so first change is compared to "never saved"
 	lastSaved[player] = 0
 
+	-- For "max" strategy, load the player's existing DataStore record so future
+	-- values are compared against their true all-time peak, not just this session.
+	if SCORE_STRATEGY == "max" then
+		local peakOk, stored = pcall(function()
+			return dataStore:GetAsync(tostring(player.UserId))
+		end)
+		sessionPeak[player] = if peakOk and stored then stored else 0
+	end
+
 	-- Save when the value changes
 	print("Tracking player", player.Name, "with initial score", statValue.Value)
 	statValue.Changed:Connect(function(newValue: number)
@@ -200,6 +223,7 @@ local function _onPlayerRemoving(player: Player)
 	lastSaved[player] = nil
 	lastValue[player] = nil
 	pendingTask[player] = nil
+	sessionPeak[player] = nil
 end
 
 -- ── Public API ────────────────────────────────────────────────────
