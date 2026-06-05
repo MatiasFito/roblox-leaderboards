@@ -223,6 +223,12 @@ function LeaderboardPodium.update(top3: { { [string]: any } })
 		destroyRig(slot) -- clears currentUserIds[slot] too
 
 		if entry and entry.userId then
+			-- Negative userIds are fake/seed entries — skip rig spawning.
+			-- The platforms stand empty, reading as unclaimed podium spots,
+			-- which naturally invites real players to compete for them.
+			if entry.userId < 0 then
+				continue
+			end
 			-- Spawn in a separate thread so one slow fetch doesn't block the others
 			task.spawn(spawnRig, slot, entry.userId, entry.name)
 		end

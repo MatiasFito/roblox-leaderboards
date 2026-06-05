@@ -93,6 +93,19 @@ end
 -- ── Username resolution ───────────────────────────────────────────
 
 local function _getUsername(userId: number): string
+	-- Negative userIds are fake/seed entries; resolve from config seedData
+	-- instead of calling the Roblox API (which would fail for negative IDs).
+	if userId < 0 then
+		local seedData = (Config :: any).seedData
+		if seedData then
+			local entry = seedData[-userId]
+			if entry then
+				return entry.name
+			end
+		end
+		return "Player " .. userId
+	end
+
 	if usernameCache[userId] then
 		return usernameCache[userId]
 	end
@@ -228,6 +241,35 @@ end
 
 -- ── Public API ────────────────────────────────────────────────────
 
+-- Populates the DataStore with fake entries from LeaderboardConfig.seedData.
+-- Call this once from init.server.luau when launching a new game so the board
+-- is never empty. Safe to call on every server start — it always overwrites
+-- the fake entries with the configured scores, so you can update them by
+-- changing the config and redeploying.
+--
+-- Fake entries use negative integer DataStore keys (-1, -2, …) which never
+-- clash with real player UserIds. Real players displace fakes naturally
+-- as their scores rank higher.
+function LeaderboardService.seedLeaderboard()
+	local seedData = (Config :: any).seedData
+	if not seedData then
+		warn("[LeaderboardService] seedLeaderboard() called but LeaderboardConfig.seedData is nil.")
+		return
+	end
+
+	for i, entry in seedData do
+		local fakeKey = tostring(-i)
+		local ok, err = pcall(function()
+			dataStore:SetAsync(fakeKey, math.floor(entry.score))
+		end)
+		if ok then
+			print("[LeaderboardService] Seeded fake entry #" .. i .. " '" .. entry.name .. "' → " .. entry.score)
+		else
+			warn("[LeaderboardService] Failed to seed '" .. entry.name .. "' –", err)
+		end
+	end
+end
+
 -- Manual score override. Saves immediately and resets the debounce timer.
 -- Use this when you need to set a score from outside the leaderstats system.
 function LeaderboardService.setScore(player: Player, value: number)
@@ -241,6 +283,33 @@ function LeaderboardService.setScore(player: Player, value: number)
 	end
 
 	_doSave(player, value)
+end
+
+-- Writes a score directly to the DataStore for any userId, whether or not
+-- that player is currently in the server. Useful for seeding friend/family
+-- scores before launch:
+--   LeaderboardService.setScoreByUserId(1234567890, 50000)
+-- Respects the "max" strategy — won't overwrite a higher existing record.
+function LeaderboardService.setScoreByUserId(userId: number, value: number)
+	local key = tostring(userId)
+
+	if SCORE_STRATEGY == "max" then
+		local ok, stored = pcall(function()
+			return dataStore:GetAsync(key)
+		end)
+		if ok and stored and stored >= math.floor(value) then
+			return -- existing record is already higher, don't overwrite
+		end
+	end
+
+	local ok, err = pcall(function()
+		dataStore:SetAsync(key, math.floor(value))
+	end)
+	if ok then
+		print("[LeaderboardService] setScoreByUserId:", userId, "→", value)
+	else
+		warn("[LeaderboardService] setScoreByUserId failed for", userId, "–", err)
+	end
 end
 
 -- Entry point. Call once from init.server.luau.
