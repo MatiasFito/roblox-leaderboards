@@ -1,1 +1,2 @@
-print("Hello world, from client!")
+local LeaderboardClient = require(script.LeaderboardClient)
+LeaderboardClient.init()
