@@ -180,14 +180,17 @@ function LeaderboardPodium.build()
 		plat.CFrame = platCFrame(slot)
 		plat.Parent = podiumFolder
 
-		-- Rank number label on the face of the platform
-		local billboard = Instance.new("BillboardGui")
-		billboard.Name = "RankLabel"
-		billboard.Size = UDim2.fromOffset(80, 60)
-		billboard.StudsOffset = Vector3.new(0, PLATFORM_HEIGHTS[slot] / 2 + 0.5, 0)
-		billboard.AlwaysOnTop = false
-		billboard.LightInfluence = 0
-		billboard.Parent = plat
+		-- Rank number label painted on the top face of the platform.
+		-- SurfaceGui scales with perspective (like any 3D object) so the label
+		-- stays the same physical size regardless of viewing distance.
+		local surfaceGui = Instance.new("SurfaceGui")
+		surfaceGui.Name = "RankLabel"
+		surfaceGui.Face = Enum.NormalId.Front
+		surfaceGui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+		surfaceGui.PixelsPerStud = 50
+		surfaceGui.LightInfluence = 0
+		surfaceGui.AlwaysOnTop = false
+		surfaceGui.Parent = plat
 
 		local rankText = Instance.new("TextLabel")
 		rankText.Size = UDim2.fromScale(1, 1)
@@ -196,7 +199,7 @@ function LeaderboardPodium.build()
 		rankText.Font = Enum.Font.GothamBold
 		rankText.TextScaled = true
 		rankText.TextColor3 = PLATFORM_COLORS[slot]
-		rankText.Parent = billboard
+		rankText.Parent = surfaceGui
 
 		platformParts[slot] = plat
 	end

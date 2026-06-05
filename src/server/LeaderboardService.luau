@@ -29,6 +29,9 @@ local lastValue: { [Player]: number } = {} -- most recent known score
 -- Username cache to avoid repeated GetNameFromUserIdAsync calls
 local usernameCache: { [number]: string } = {}
 
+-- Countdown ticker thread (cancelled and restarted on each refresh)
+local countdownThread: thread? = nil
+
 -- ── DataStore helpers ─────────────────────────────────────────────
 
 local SAVE_COOLDOWN = 6 -- seconds
@@ -123,6 +126,12 @@ local function _fetchTopEntries(): { { [string]: any } }
 end
 
 local function _refresh()
+	-- Cancel the previous countdown ticker before starting a new refresh
+	if countdownThread then
+		task.cancel(countdownThread)
+		countdownThread = nil
+	end
+
 	local entries = _fetchTopEntries()
 
 	-- Update board GUI
@@ -132,8 +141,19 @@ local function _refresh()
 	local top3 = { entries[1], entries[2], entries[3] }
 	Podium.update(top3)
 
+	-- Start a per-second countdown ticker for this interval
+	local interval = Config.refreshInterval
+	countdownThread = task.spawn(function()
+		for remaining = interval, 0, -1 do
+			Gui.setCountdown(guiHandle, remaining)
+			if remaining > 0 then
+				task.wait(1)
+			end
+		end
+	end)
+
 	-- Schedule next refresh
-	task.delay(Config.refreshInterval, _refresh)
+	task.delay(interval, _refresh)
 end
 
 -- ── Player tracking ───────────────────────────────────────────────
