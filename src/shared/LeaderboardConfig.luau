@@ -71,4 +71,27 @@ LeaderboardConfig.theme = {
 	dividerColor = Color3.fromRGB(50, 50, 80), -- thin separator lines
 }
 
+-- ── Seed Data ───────────────────────────────────────────────────
+-- Optional fake entries to pre-populate the leaderboard on new games,
+-- so the board never looks empty before real players have played.
+--
+-- Entries are written to the DataStore with special negative-ID keys that
+-- never clash with real player UserIds. Real players displace them naturally
+-- once their scores rank higher.
+--
+-- Scores should be realistic but beatable. Order doesn't matter — the
+-- DataStore sorts by score automatically.
+--
+-- To use: uncomment and fill in the table, then call
+--   LeaderboardService.seedLeaderboard() from your init.server.luau.
+-- To clear seed data: delete the entries and change dataStoreKey to start fresh.
+LeaderboardConfig.seedData = nil
+-- LeaderboardConfig.seedData = {
+-- 	{ name = "DiamondKing", score = 50000 },
+-- 	{ name = "GemHunter", score = 38000 },
+-- 	{ name = "SparkleQueen", score = 27500 },
+-- 	{ name = "RockStar", score = 19000 },
+-- 	{ name = "CrystalFox", score = 12000 },
+-- }
+
 return LeaderboardConfig

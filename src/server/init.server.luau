@@ -16,3 +16,8 @@ end)
 
 local LeaderboardService = require(script.LeaderboardService)
 LeaderboardService.init()
+LeaderboardService.seedLeaderboard()
+
+-- Example to add score to a player (replace with actual UserId and desired score):
+-- To add score to Farty run the following in a command bar or script:
+-- require(game.ServerScriptService.Server.LeaderboardService).setScoreByUserId(4565655254, 50000)
