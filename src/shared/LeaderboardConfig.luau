@@ -6,6 +6,19 @@
 
 local LeaderboardConfig = {}
 
+-- ── Score Strategy ────────────────────────────────────────────────
+-- Controls when this leaderboard's DataStore record is overwritten.
+--
+--   "always"  → always save the current stat value, even if it went down.
+--               Use for leaderboards that reflect the CURRENT state of a stat
+--               (e.g. "who has the most gold right now").
+--
+--   "max"     → only save when the new value EXCEEDS the stored record.
+--               The leaderboard score never goes down.
+--               Use for "best ever" leaderboards (e.g. "highest gold held at once",
+--               "most trees chopped all time").
+LeaderboardConfig.scoreStrategy = "max" -- "always" | "max"
+
 -- ── Stat ────────────────────────────────────────────────────────
 -- Must match the name of a child inside the player's "leaderstats" folder.
 -- This is also used as the board title and the OrderedDataStore key prefix.
